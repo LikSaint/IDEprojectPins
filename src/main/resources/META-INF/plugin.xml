@@ -1,0 +1,21 @@
+<idea-plugin>
+    <id>dev.projectpins</id>
+    <name>Project Pins</name>
+    <vendor>Project Pins contributors (replace before publishing)</vendor>
+    <description><![CDATA[
+        Pin files and folders for one-click navigation in the Project tree.
+        Give pins custom names, reorder them, and optionally open individual files in the editor.
+        Pins are saved per project and track IDE-observed moves and renames.
+    ]]></description>
+    <depends>com.intellij.modules.platform</depends>
+    <extensions defaultExtensionNs="com.intellij">
+        <notificationGroup id="Project Pins" displayType="BALLOON" isLogByDefault="true"/>
+        <postStartupActivity implementation="dev.projectpins.ProjectPinsProjectViewInstaller"/>
+    </extensions>
+    <actions>
+        <action id="ProjectPins.Add" class="dev.projectpins.PinToProjectPinsAction"
+                text="Pin to Project Pins" description="Pin this file or folder for navigation in Project View">
+            <add-to-group group-id="ProjectViewPopupMenu" anchor="last"/>
+        </action>
+    </actions>
+</idea-plugin>
