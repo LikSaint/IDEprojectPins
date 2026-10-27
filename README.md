@@ -1,70 +1,79 @@
 # Project Pins
 
-Small project-scoped shortcuts to files and folders in JetBrains IDEs. Right-click a file or folder in the Project tree, choose **Pin to Project Pins**, give it a name, and click **Pin**. Pins appear as compact icon buttons in the Project View toolbar.
+Project Pins adds a compact row of shortcuts directly above the standard **Project** tree in JetBrains IDEs. Right-click one file or folder in the tree, choose **Pin to Project Pins**, set its label, and create the pin.
 
-Click a pin to expand its ancestors and select it in the standard Project tree. Pins are exposed as icon-only actions in the Project View toolbar. Each icon keeps the native file/folder icon and adds a small 1–4 character badge from the pin name; the font scales down as the badge gets longer. The full name and path are available as the tooltip.
+Each button keeps the target's native file or folder icon and overlays up to four characters from the pin name. The badge width and font size are calculated from the actual text width. The full pin name and stored path are shown in the tooltip.
 
-Right-click a button (or focus it and press Shift+F10) to go to, rename, edit settings/repair the target path, toggle editor opening, move left/right, or remove it. Missing targets display a warning icon and report a non-blocking notification when clicked.
+## Behaviour
 
-## Screenshots
+- A single click selects the target and expands its parents in the standard Project tree.
+- New file pins have **Open in editor** enabled by default. It can be disabled while creating or editing the pin.
+- Folder pins never show or store the editor-opening option.
+- A double click always opens a file, even if **Open in editor** is disabled, then moves its caret and scroll position to the top.
+- Right-click opens a native IntelliJ popup with **Edit…** and **Remove**.
+- The same file or folder cannot be pinned twice.
+- Missing targets use a warning icon. Their stored path can be repaired through **Edit…**.
+- Pins and their order are stored per project in `.idea/projectPins.xml`.
+- IDE-observed file and parent-folder renames or moves are tracked with `VirtualFilePointer`.
 
-Placeholder: add screenshots of the create dialog, compact panel, and revealed Project tree after final UI acceptance testing.
+The row is hidden when the project has no pins and scrolls horizontally when it runs out of space.
 
-## Development
+## Installation
 
-Requires JDK 21, network access for first dependency resolution, and macOS/Linux/Windows. The Gradle wrapper supplies Gradle 9.1.0. Built with Kotlin 2.2.20 and IntelliJ Platform Gradle Plugin 2.19.0. The baseline is WebStorm 2025.3.1.1 (build 253); only IntelliJ Platform APIs are used. Other 253-based IDEs should be evaluated with Plugin Verifier before distributing to them.
+Build the plugin with JDK 21 and the installed WebStorm SDK:
 
 ```sh
 export JAVA_HOME=/path/to/jdk-21
-./gradlew build
-./gradlew test
-./gradlew buildPlugin
-./gradlew verifyPlugin
-./gradlew runIde
+./gradlew clean buildPlugin -PlocalIdePath=/Applications/WebStorm.app
 ```
 
-To use an existing WebStorm installation instead of downloading the SDK, append `-PlocalIdePath=/Applications/WebStorm.app` to these commands. Do not commit machine-specific SDK paths. `runIde` uses an isolated sandbox under `build/idea-sandbox`.
+The installable archive is written to `build/distributions/ProjectPins-<version>.zip` (currently `ProjectPins-0.3.7.zip`). In the IDE, open **Settings → Plugins → gear menu → Install Plugin from Disk**, select the ZIP, and restart the IDE if requested. Installing a newer ZIP replaces the installed version.
 
-The installable archive is `build/distributions/ProjectPins-0.1.0.zip`. In your IDE, open **Settings → Plugins → gear menu → Install Plugin from Disk**, choose the ZIP, and restart if prompted.
+Without `-PlocalIdePath`, Gradle downloads the configured WebStorm SDK on first use:
+
+```sh
+./gradlew buildPlugin
+```
+
+## Development
+
+The project uses JDK 21, Kotlin 2.2.20, Gradle 9.1.0, and IntelliJ Platform Gradle Plugin 2.19.0. Its baseline SDK is WebStorm 2025.3.1.1 and declared compatibility is limited to build `253.*`.
+
+```sh
+./gradlew compileKotlin -PlocalIdePath=/Applications/WebStorm.app
+./gradlew test -PlocalIdePath=/Applications/WebStorm.app
+./gradlew buildPlugin -PlocalIdePath=/Applications/WebStorm.app
+./gradlew verifyPlugin -PlocalIdePath=/Applications/WebStorm.app
+./gradlew runIde -PlocalIdePath=/Applications/WebStorm.app
+```
+
+Use `--offline` after dependencies are cached. `runIde` starts an isolated IDE under `build/idea-sandbox`. Do not commit a machine-specific SDK path.
 
 ## Architecture
 
-- `ProjectPinsService`: project-level persistence, ordered snapshots, VFS pointers and change notifications.
-- `ProjectPin` / `PinsState`: simple XML-serializable beans, defensively copied by the service.
-- `ProjectPinsNavigator`: resolves the target, invokes `ProjectView.selectCB`, and optionally invokes `FileEditorManager.openFile` after selection completes.
-- `PinToProjectPinsAction` / `PinEditorDialog`: Project View context action and native IntelliJ dialog.
-- `ProjectPinsToolbarActionGroup`: native Project View toolbar group with icon-only actions and short text badges.
+- `ProjectPinsService` owns project state, ordered snapshots, VFS pointers, duplicate detection, and change notifications.
+- `ProjectPin` and `PinsState` are XML-serializable state beans. Service callers receive defensive copies.
+- `ProjectPinsProjectViewInstaller` wraps the shared Project View content once and inserts `ProjectPinsRow` above it. All Project View tabs must keep the same wrapper; wrapping each tab separately can make the tree disappear.
+- `ProjectPinsRow` renders the horizontal row, native popup, hover state, and custom badges.
+- `ProjectPinsNavigator` reveals targets through `ProjectView.selectCB`, optionally opens files, and handles double-click scrolling.
+- `PinToProjectPinsAction` and `PinEditorDialog` provide the Project View context action and create/edit dialog.
 
-No reflection, Project tree traversal or Swing injection into another tool window. Changes run on the EDT; cached VFS lookups do not synchronously refresh the filesystem. The platform handles asynchronous tree expansion. VFS listeners and pointer lifetimes are bound to disposables.
+The Project row is currently implemented through the Project tool window's Swing content because the IntelliJ Platform does not expose a public extension point for this exact location. Treat this integration as version-sensitive and verify it in a sandbox whenever the platform version changes.
 
-## State and paths
+## State and path rules
 
-Pins are stored in `.idea/projectPins.xml` through `PersistentStateComponent`. Each pin stores its ID, name, target path, directory flag and editor preference. List position determines order. Paths under the project base directory are relative, including `.` for the root; external targets use a VFS URL. Treat external URLs as machine-specific.
+Paths inside the project are stored relative to the project root; `.` represents the root itself. Targets outside the project use their full VFS URL and may be machine-specific. List position is the saved display order.
 
-`VirtualFilePointerManager` tracks IDE-observed file and parent-folder renames/moves. Current pointer URLs are converted back to relative paths on state save, preserving tracked moves across restarts. Removing a pin disposes its pointer; closing the project disposes the service and its children. Custom names remain unchanged after a rename.
+Moves performed while the IDE is closed, delete-and-recreate operations, hidden or excluded files, and unavailable external roots may leave a pin unresolved. The user can edit the target path or remove the pin.
 
-## Verification and limitations
+## Verification and release
 
-Platform fixture tests cover XML round trips, ordering and boundaries, settings and snapshot isolation, missing targets and repair, relative/external path resolution, and pointer tracking through rename/move and serialization. See [manual acceptance checklist](docs/ACCEPTANCE.md) and [implementation decisions](docs/IMPLEMENTATION.md).
+Platform fixture tests cover persistence, ordering, settings, defensive snapshots, missing-target repair, relative/external paths, and VFS pointer tracking. UI behavior still requires the [manual acceptance checklist](docs/ACCEPTANCE.md). See [implementation notes](docs/IMPLEMENTATION.md) and [AI development guide](robots.md).
 
-- The panel uses a supported separate secondary tool window; it is not injected into the Project toolbar. Resize/dock it using normal IDE controls. Many pins scroll horizontally.
-- Reveal-only pins keep keyboard focus in the pins panel to avoid triggering Project View's autoscroll-to-source. The selected tree row may therefore use the inactive selection color.
-- Moves while the IDE is closed, external moves reported as delete/create, excluded/hidden targets, and unavailable external roots may not be recoverable. Edit a pin's target path or remove it.
-- Paths outside the project directory use URLs, even for external module content roots. The MVP does not assign portable identifiers to arbitrary content roots.
-- No drag-and-drop reorder, multi-selection pin creation, localization, remote-development/split-mode support, or automatic offline target search.
-- Declared compatibility is intentionally limited to build 253 until newer platform lines are verified.
+Before publication, replace the vendor placeholder in `plugin.xml`, confirm ownership of the plugin ID, add a license, plugin icon, screenshots, support links, and a privacy description. Update the version and changelog, then run tests, `buildPlugin`, Plugin Verifier, and the manual checks against every advertised IDE version.
 
-## Marketplace preparation
-
-Before publication, replace the vendor placeholder in `plugin.xml`, confirm ownership of the plugin ID, choose/add a license, provide a plugin icon, real screenshots, support links and a privacy description. Update the version in `build.gradle.kts` and maintain release notes in `CHANGELOG.md`; copy the release's notes into `pluginConfiguration.changeNotes` for the packaged descriptor.
-
-Run `build`, `verifyPlugin`, and the manual acceptance checklist against every advertised IDE/version. Expand `pluginVerification.ides` and the compatibility range together. Inspect verifier reports under `build/reports/pluginVerifier`.
-
-Publishing is configured but is not part of the build:
+Publishing requires `JETBRAINS_MARKETPLACE_TOKEN`; keep it in an environment variable or CI secret:
 
 ```sh
-export JETBRAINS_MARKETPLACE_TOKEN='your-token'
 ./gradlew publishPlugin
 ```
-
-Read the token from an environment variable or CI secret only. Never commit it. Add Marketplace signing via environment-backed `intellijPlatform.signing` certificate/private-key/password properties if required by your release process. No publication is performed automatically.

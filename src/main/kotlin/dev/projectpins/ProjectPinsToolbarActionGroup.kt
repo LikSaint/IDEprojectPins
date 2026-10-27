@@ -1,10 +1,15 @@
 package dev.projectpins
 
 import com.intellij.icons.AllIcons
+import com.intellij.ide.DataManager
 import com.intellij.openapi.Disposable
+import com.intellij.openapi.actionSystem.AnActionEvent
+import com.intellij.openapi.actionSystem.DefaultActionGroup
 import com.intellij.openapi.project.DumbAware
+import com.intellij.openapi.project.DumbAwareAction
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.startup.ProjectActivity
+import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.util.Key
 import com.intellij.openapi.vfs.VirtualFile
@@ -14,6 +19,7 @@ import com.intellij.openapi.wm.ToolWindowManager
 import com.intellij.openapi.wm.ex.ToolWindowManagerListener
 import com.intellij.ui.JBColor
 import com.intellij.ui.InplaceButton
+import com.intellij.ui.awt.RelativePoint
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.content.Content
 import com.intellij.ui.content.ContentManagerEvent
@@ -33,9 +39,7 @@ import java.awt.event.MouseEvent
 import java.awt.geom.RoundRectangle2D
 import javax.swing.Icon
 import javax.swing.JComponent
-import javax.swing.JMenuItem
 import javax.swing.JPanel
-import javax.swing.JPopupMenu
 import javax.swing.ScrollPaneConstants
 
 /** Adds one compact Project Pins row above the standard Project View content. */
@@ -127,14 +131,15 @@ private class ProjectPinsRow(private val project: Project) : JPanel(BorderLayout
     private fun createButton(pin: ProjectPin): InplaceButton {
         val file = service.resolve(pin.id)
         val tooltip = "${pin.name} · ${pin.targetPath}"
-        val button = object : InplaceButton(tooltip, PinIcon(file, pin.name, file == null), {
+        val icon = PinIcon(file, pin.name, file == null)
+        val button = object : InplaceButton(tooltip, icon, {
             ProjectPinsNavigator.navigate(project, pin.id)
         }) {
             override fun paintHover(graphics: Graphics) {
                 super.paintHover(graphics, JBUI.CurrentTheme.ActionButton.hoverBackground())
             }
         }.apply {
-            preferredSize = Dimension(JBUI.scale(26), JBUI.scale(24))
+            preferredSize = Dimension(icon.iconWidth + JBUI.scale(8), icon.iconHeight + JBUI.scale(4))
             minimumSize = preferredSize
             maximumSize = preferredSize
             isFocusable = false
@@ -143,24 +148,50 @@ private class ProjectPinsRow(private val project: Project) : JPanel(BorderLayout
             setHoveringEnabled(true)
         }
         button.addMouseListener(object : MouseAdapter() {
-            override fun mousePressed(event: MouseEvent) { if (event.isPopupTrigger) showMenu(button, pin.id) }
-            override fun mouseReleased(event: MouseEvent) { if (event.isPopupTrigger) showMenu(button, pin.id) }
+            override fun mousePressed(event: MouseEvent) { if (event.isPopupTrigger) showMenu(button, pin.id, event) }
+            override fun mouseReleased(event: MouseEvent) { if (event.isPopupTrigger) showMenu(button, pin.id, event) }
+            override fun mouseClicked(event: MouseEvent) {
+                if (event.button == MouseEvent.BUTTON1 && event.clickCount == 2) {
+                    ProjectPinsNavigator.openFileAndScrollToTop(project, pin.id)
+                }
+            }
         })
         return button
     }
 
-    private fun showMenu(button: JComponent, pinId: String) {
+    private fun showMenu(button: JComponent, pinId: String, event: MouseEvent) {
         val pin = service.pins().find { it.id == pinId } ?: return
-        val menu = JPopupMenu()
-        menu.add(JMenuItem("Редактировать…").apply {
-            addActionListener {
-                val dialog = PinEditorDialog(project, pin.name, pin.directory, pin.openInEditor, pin.targetPath)
-                if (dialog.showAndGet()) service.update(pin.id, dialog.pinName, dialog.openInEditor, dialog.targetPath)
-            }
-        })
-        menu.addSeparator()
-        menu.add(JMenuItem("Удалить").apply { addActionListener { service.remove(pin.id) } })
-        menu.show(button, 0, button.height)
+        val actions = DefaultActionGroup().apply {
+            add(object : DumbAwareAction("Редактировать…") {
+                override fun actionPerformed(event: AnActionEvent) {
+                    val currentPin = service.pins().find { it.id == pin.id } ?: return
+                    val dialog = PinEditorDialog(
+                        project,
+                        currentPin.name,
+                        currentPin.directory,
+                        currentPin.openInEditor,
+                        currentPin.targetPath,
+                    )
+                    if (dialog.showAndGet()) {
+                        service.update(currentPin.id, dialog.pinName, dialog.openInEditor, dialog.targetPath)
+                    }
+                }
+            })
+            addSeparator()
+            add(object : DumbAwareAction("Удалить") {
+                override fun actionPerformed(event: AnActionEvent) {
+                    service.remove(pin.id)
+                }
+            })
+        }
+        val popup = JBPopupFactory.getInstance().createActionGroupPopup(
+            null,
+            actions,
+            DataManager.getInstance().getDataContext(button),
+            JBPopupFactory.ActionSelectionAid.SPEEDSEARCH,
+            false,
+        )
+        popup.show(RelativePoint(event))
     }
 
     override fun dispose() = Unit
@@ -176,16 +207,30 @@ private class PinIcon(private val file: VirtualFile?, label: String, private val
     }
     private val label = label.trim().take(4).ifEmpty { "?" }.uppercase()
 
-    override fun getIconWidth() = JBUI.scale(18)
-    override fun getIconHeight() = JBUI.scale(18)
+    private val badgeWidth = when (label.length) {
+        1 -> 18
+        2 -> 20
+        3 -> 23
+        else -> 27
+    }
+
+    override fun getIconWidth() = JBUI.scale(badgeWidth)
+    override fun getIconHeight() = JBUI.scale(20)
 
     override fun paintIcon(component: java.awt.Component?, graphicsSource: Graphics, x: Int, y: Int) {
         val graphics = graphicsSource.create() as Graphics2D
         try {
             graphics.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON)
-            base.paintIcon(component, graphics, x, y)
-            val size = when (label.length) { 1 -> 9; 2 -> 8; 3 -> 6; else -> 5 }
-            graphics.font = graphics.font.deriveFont(Font.BOLD, JBUI.scale(size).toFloat())
+            val baseX = x + (iconWidth - base.iconWidth) / 2
+            val baseY = y + (iconHeight - base.iconHeight) / 2
+            base.paintIcon(component, graphics, baseX, baseY)
+            val maxTextWidth = iconWidth - JBUI.scale(2)
+            var size = 12
+            while (size > 6) {
+                graphics.font = graphics.font.deriveFont(Font.BOLD, JBUI.scale(size).toFloat())
+                if (graphics.fontMetrics.stringWidth(label) + JBUI.scale(3) <= maxTextWidth) break
+                size--
+            }
             val metrics: FontMetrics = graphics.fontMetrics
             val width = metrics.stringWidth(label) + JBUI.scale(3)
             val height = metrics.height

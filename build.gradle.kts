@@ -6,7 +6,7 @@ plugins {
 }
 
 group = "dev.projectpins"
-version = "0.3.2"
+version = "0.3.7"
 
 repositories {
     mavenCentral()
@@ -32,7 +32,7 @@ intellijPlatform {
     pluginConfiguration {
         name = "Project Pins"
         ideaVersion { sinceBuild = "253"; untilBuild = "253.*" }
-        changeNotes = "Initial MVP: project-scoped pins, optional editor opening, rename/move tracking and pin management."
+        changeNotes = "Compact Project View pin row with adaptive badges, native edit/remove popup, duplicate prevention, optional file opening and double-click scroll-to-top."
     }
     publishing { token = providers.environmentVariable("JETBRAINS_MARKETPLACE_TOKEN") }
     pluginVerification {

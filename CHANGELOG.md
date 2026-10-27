@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.3.7
+
+- Enable “Open immediately” by default for new file pins.
+- Keep the option hidden for directory pins.
+
+## 0.3.6
+
+- Double-clicking a file pin opens the file even when “Open immediately” is disabled, then scrolls it to the first line.
+
+## 0.3.5
+
+- Double-clicking a pin scrolls its already-open file to the first line.
+
+## 0.3.4
+
+- Size pin badges from their measured text width so 3–4 character labels remain readable.
+- Allow the pin button to widen slightly for longer labels.
+
+## 0.3.3
+
+- Replace the Swing context menu with the native IntelliJ action popup.
+
 ## 0.3.2
 
 - Paint the native IntelliJ action-button background while hovering over a pin.

@@ -4,11 +4,27 @@ import com.intellij.ide.projectView.ProjectView
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.fileEditor.FileEditorManager
+import com.intellij.openapi.editor.LogicalPosition
+import com.intellij.openapi.editor.ScrollType
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.wm.ToolWindowId
 import com.intellij.openapi.wm.ToolWindowManager
 
 object ProjectPinsNavigator {
+    fun openFileAndScrollToTop(project: Project, id: String) {
+        val service = ProjectPinsService.getInstance(project)
+        val file = service.resolve(id) ?: return
+        if (file.isDirectory) return
+        val manager = FileEditorManager.getInstance(project)
+        manager.openFile(file, true)
+        val editor = manager.selectedTextEditor ?: return
+        manager.runWhenLoaded(editor) {
+            editor.caretModel.moveToOffset(0)
+            editor.scrollingModel.scrollTo(LogicalPosition(0, 0), ScrollType.MAKE_VISIBLE)
+            editor.scrollingModel.scrollVertically(0)
+        }
+    }
+
     fun navigate(project: Project, id: String) {
         if (project.isDisposed) return
         val service = ProjectPinsService.getInstance(project)

@@ -2,7 +2,6 @@ package dev.projectpins
 
 import com.intellij.openapi.actionSystem.*
 import com.intellij.openapi.project.DumbAwareAction
-import com.intellij.openapi.wm.ToolWindowManager
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
 
@@ -22,10 +21,9 @@ class PinToProjectPinsAction : DumbAwareAction() {
                 .notify(project)
             return
         }
-        val dialog = PinEditorDialog(project, file.name, file.isDirectory, false)
+        val dialog = PinEditorDialog(project, file.name, file.isDirectory, true)
         if (dialog.showAndGet() && file.isValid) {
             ProjectPinsService.getInstance(project).add(file, dialog.pinName, dialog.openInEditor)
-            ToolWindowManager.getInstance(project).getToolWindow("Project Pins")?.show()
         }
     }
 }
